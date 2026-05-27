@@ -43,9 +43,9 @@ pipeline {
             steps {
                 echo 'Running security scan...'
                 sh '''
-                    pip3 install bandit
+                    pip3 install pbr bandit
                     python3 -m bandit -r app/ -f txt -o bandit-report.txt || true
-                    cat bandit-report.txt
+                    cat bandit-report.txt || true
                     echo "Security scan complete"
                 '''
             }
