@@ -5,6 +5,7 @@ pipeline {
         IMAGE_NAME = 'ai-field-companion'
         IMAGE_TAG = "${BUILD_NUMBER}"
         CONTAINER_NAME = 'ai-field-companion-app'
+        PROMETHEUS_CONTAINER = 'prometheus-monitor'
     }
 
     stages {
@@ -82,14 +83,49 @@ pipeline {
 
         stage('Monitoring') {
             steps {
-                echo 'Setting up monitoring...'
+                echo 'Setting up Prometheus monitoring...'
                 sh '''
-                    sleep 3
+                    # Stop any existing Prometheus container
+                    docker stop ${PROMETHEUS_CONTAINER} || true
+                    docker rm ${PROMETHEUS_CONTAINER} || true
+
+                    # Start Prometheus with our scrape config
+                    docker run -d \
+                        --name ${PROMETHEUS_CONTAINER} \
+                        -p 9090:9090 \
+                        -v $(pwd)/prometheus.yml:/etc/prometheus/prometheus.yml \
+                        prom/prometheus:latest
+
+                    echo "Waiting for Prometheus to initialise..."
+                    sleep 10
+
+                    # Verify the app container is still running
                     STATUS=$(docker inspect --format="{{.State.Status}}" ${CONTAINER_NAME})
-                    echo "Container status: ${STATUS}"
-                    docker stats ${CONTAINER_NAME} --no-stream
-                    curl -f http://localhost:8000/health || echo "Health check failed"
-                    echo "Monitoring check complete"
+                    echo "App container status: ${STATUS}"
+
+                    # Confirm the app metrics endpoint is live
+                    echo "--- App /metrics sample ---"
+                    curl -sf http://localhost:8000/metrics | head -20
+                    echo ""
+
+                    # Confirm Prometheus itself is healthy
+                    curl -sf http://localhost:9090/-/healthy && echo "Prometheus: healthy"
+
+                    # Allow Prometheus time to scrape, then query its API
+                    sleep 8
+                    echo "--- Prometheus scrape status ---"
+                    curl -s "http://localhost:9090/api/v1/query?query=up{job=\\"ai-field-companion\\"}" \
+                        | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+results = d.get('data', {}).get('result', [])
+if results:
+    val = results[0]['value'][1]
+    print('Prometheus target UP =', val, '(1=healthy, 0=down)')
+else:
+    print('Prometheus: target not yet scraped — check after build')
+"
+                    echo "Monitoring complete — Prometheus dashboard: http://localhost:9090"
                 '''
             }
         }
@@ -98,11 +134,13 @@ pipeline {
     post {
         success {
             echo 'Pipeline completed successfully!'
-            echo "Application is running at http://localhost:8000"
+            echo "Application running at http://localhost:8000"
+            echo "Prometheus dashboard at http://localhost:9090"
         }
         failure {
             echo 'Pipeline failed!'
             sh 'docker stop ${CONTAINER_NAME} || true'
+            sh 'docker stop ${PROMETHEUS_CONTAINER} || true'
         }
         always {
             echo 'Pipeline finished.'

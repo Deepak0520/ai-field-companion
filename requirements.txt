@@ -4,3 +4,4 @@ httpx==0.25.2
 pytest==7.4.3
 pytest-cov==4.1.0
 bandit==1.7.5
+prometheus-fastapi-instrumentator==6.1.0
