@@ -1,13 +1,14 @@
 pipeline {
     agent any
-    
+
     environment {
         IMAGE_NAME = 'ai-field-companion'
         IMAGE_TAG = "${BUILD_NUMBER}"
         CONTAINER_NAME = 'ai-field-companion-app'
     }
-    
+
     stages {
+
         stage('Build') {
             steps {
                 echo 'Building Docker image...'
@@ -16,7 +17,7 @@ pipeline {
                 echo "Built image: ${IMAGE_NAME}:${IMAGE_TAG}"
             }
         }
-        
+
         stage('Test') {
             steps {
                 echo 'Running tests...'
@@ -26,30 +27,30 @@ pipeline {
                 '''
             }
         }
-        
+
         stage('Code Quality') {
             steps {
                 echo 'Running code quality analysis...'
                 sh '''
                     pip3 install pylint
-                    pylint app/ --exit-zero --output-format=text | tee pylint-report.txt
+                    python3 -m pylint app/ --exit-zero --output-format=text | tee pylint-report.txt
                     echo "Code quality analysis complete"
                 '''
             }
         }
-        
+
         stage('Security') {
             steps {
                 echo 'Running security scan...'
                 sh '''
                     pip3 install bandit
-                    bandit -r app/ -f txt -o bandit-report.txt || true
+                    python3 -m bandit -r app/ -f txt -o bandit-report.txt || true
                     cat bandit-report.txt
                     echo "Security scan complete"
                 '''
             }
         }
-        
+
         stage('Deploy') {
             steps {
                 echo 'Deploying to test environment...'
@@ -67,19 +68,18 @@ pipeline {
                 '''
             }
         }
-        
+
         stage('Release') {
             steps {
                 echo 'Releasing to production...'
                 sh '''
                     docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${IMAGE_NAME}:production
                     echo "Released version ${IMAGE_TAG} to production"
-                    echo "Production image: ${IMAGE_NAME}:production"
                     git tag -a v1.${IMAGE_TAG} -m "Release version 1.${IMAGE_TAG}" || true
                 '''
             }
         }
-        
+
         stage('Monitoring') {
             steps {
                 echo 'Setting up monitoring...'
@@ -94,7 +94,7 @@ pipeline {
             }
         }
     }
-    
+
     post {
         success {
             echo 'Pipeline completed successfully!'
